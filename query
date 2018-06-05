@@ -1,0 +1,37 @@
+let
+    Source = Cds.Contents("https://pbist.crm.dynamics.com", [ReorderColumns=null, UseFormattedValue=null]),
+    cdm = Source{[Group="cdm"]}[Data],
+    opportunities = cdm{[EntitySetName="opportunities"]}[Data],
+
+    #"Removed Other Columns" = Table.SelectColumns(opportunities,{"actualclosedate", "actualvalue", "closeprobability", "createdon", "estimatedclosedate", "estimatedvalue", "name", "opportunityid", "opportunityratingcode", "opportunityratingcode_display", "originatingleadid", "ownerid", "parentaccountid", "salesstage", "salesstage_display", "statecode", "statuscode", "stepname"}),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Removed Other Columns",{{"createdon", type date},{"estimatedclosedate", type date}, {"actualclosedate", type date}}),
+    #"Renamed Columns" = Table.RenameColumns(#"Changed Type1",{{"actualclosedate", "Actual Close Date"}, {"actualvalue", "Actual Value"}, {"closeprobability", "Close Probability"},
+{"createdon", "Created On"}, {"estimatedclosedate", "Estimated Close Date"}, {"estimatedvalue", "Estimated Value"}, 
+{"name", "Opportunity Name"}, {"opportunityid", "Opportunity Id"}, {"opportunityratingcode", "Opportunity Rating Code"}, {"opportunityratingcode_display", "Opportunity Rating"}, {"originatingleadid", "Lead Id"}, {"ownerid", "OwnerId"},
+{"salesstage", "Sales Stage Code"}, {"salesstage_display","Sales Stage"}
+}),
+    #"Added Custom" = Table.AddColumn(#"Renamed Columns", "Account Id", each if [parentaccountid] = null then [Opportunity Id] else [parentaccountid]),
+    #"Removed Columns" = Table.RemoveColumns(#"Added Custom",{"parentaccountid"}),
+    #"Added Custom1" = Table.AddColumn(#"Removed Columns", "Source", each null),
+    #"Renamed Columns2" = Table.RenameColumns(#"Added Custom1",{{"Created On", "Created Date"}, {"statecode", "State"}, {"statuscode", "Status"}}),
+    #"Added Custom2" = Table.AddColumn(#"Renamed Columns2", "Close Date", each if [Actual Close Date] <> null then [Actual Close Date] else [Estimated Close Date]),
+   
+    teams = cdm{[EntitySetName="teams"]}[Data],
+    #"Removed Other Columns3" = Table.SelectColumns(teams,{"name", "teamid"}),
+    #"Added Custom3" = Table.AddColumn(#"Removed Other Columns3", "Owner Type", each "Team"),
+    #"Renamed Columns3" = Table.RenameColumns(#"Added Custom3",{{"teamid", "Owner Id"}, {"name", "Owner Name"}}),
+
+    systemusers = cdm{[EntitySetName="systemusers"]}[Data],
+    #"Removed Other Columns4" = Table.SelectColumns(systemusers,{"fullname", "systemuserid"}),
+    #"Renamed Columns4" = Table.RenameColumns(#"Removed Other Columns4",{{"systemuserid", "Owner Id"}, {"fullname", "Owner Name"}}),
+    #"Added Custom4" = Table.AddColumn(#"Renamed Columns4", "Owner Type", each "User"),
+    #"Appended Query" = Table.Combine({#"Renamed Columns3", #"Added Custom4"}),
+    #"Merged Queries" = Table.NestedJoin(#"Added Custom2",{"OwnerId"},#"Appended Query",{"Owner Id"},"Owner",JoinKind.LeftOuter),
+    #"Expanded Owner" = Table.ExpandTableColumn(#"Merged Queries", "Owner", {"Owner Name"}, {"Owner Name"}),
+  //  #"Renamed Columns5" = Table.RenameColumns(#"Expanded Owner",{{"State", "State code"}, {"statecode_display", "State"}, {"Status", "Status code"}, {"statuscode_display", "Status"}}),
+    #"Changed Type2" = Table.TransformColumnTypes(#"Expanded Owner",{{"Actual Close Date", type date}, {"Estimated Close Date", type date}, {"Close Date", type date}}),
+    #"Add 2 Years to Actual Date" = Table.TransformColumns(#"Changed Type2",{{"Actual Close Date", each Date.AddYears(_, 2), type date}}),
+    #"Add 2 Years to Estimated Date" = Table.TransformColumns(#"Add 2 Years to Actual Date",{{"Estimated Close Date", each Date.AddYears(_, 2), type date}}),
+    #"Sorted Rows" = Table.Sort(#"Add 2 Years to Estimated Date",{{"Estimated Close Date", Order.Descending}})
+in
+    #"Sorted Rows"
